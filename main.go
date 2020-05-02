@@ -16,41 +16,39 @@ import (
 )
 
 var (
-  fail2banCurrentFailed = prometheus.NewGaugeVec(
-    prometheus.GaugeOpts{
-      Name: "fail2ban_current_failed",
-      Help: "Number of failed attempts",
-    },
-    []string{"jail"},
-  )
+	fail2banCurrentFailed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fail2ban_current_failed",
+			Help: "Number of failed attempts",
+		},
+		[]string{"jail"},
+	)
 
-  fail2banTotalFailed = prometheus.NewGaugeVec(
-    prometheus.GaugeOpts{
-      Name: "fail2ban_total_failed",
-      Help: "Total Number of failed attempts",
-    },
-    []string{"jail"},
-  )
+	fail2banTotalFailed = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fail2ban_total_failed",
+			Help: "Total Number of failed attempts",
+		},
+		[]string{"jail"},
+	)
 
+	fail2banCurrentBanned = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fail2ban_current_banned",
+			Help: "Number of current banned IPs",
+		},
+		[]string{"jail"},
+	)
 
-  fail2banCurrentBanned = prometheus.NewGaugeVec(
-    prometheus.GaugeOpts{
-      Name: "fail2ban_current_banned",
-      Help: "Number of current banned IPs",
-    },
-    []string{"jail"},
-  )
+	fail2banTotalBanned = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "fail2ban_total_banned",
+			Help: "Total Number of banned IPs",
+		},
+		[]string{"jail"},
+	)
 
-
-  fail2banTotalBanned = prometheus.NewGaugeVec(
-    prometheus.GaugeOpts{
-      Name: "fail2ban_total_banned",
-      Help: "Total Number of banned IPs",
-    },
-    []string{"jail"},
-  )
-
-  reg = prometheus.NewRegistry()
+	reg = prometheus.NewRegistry()
 )
 
 func initLog() {
@@ -60,7 +58,7 @@ func initLog() {
 }
 
 func init() {
-  initLog()
+	initLog()
 	reg.MustRegister(fail2banCurrentFailed)
 	reg.MustRegister(fail2banCurrentBanned)
 	reg.MustRegister(fail2banTotalFailed)
@@ -78,9 +76,9 @@ type jail struct {
 func processJailStat(fail2banstats string, regex string) float64 {
 	re := regexp.MustCompile(regex)
 	line := re.FindString(fail2banstats)
-  statstring := strings.Split(line, ":")
+	statstring := strings.Split(line, ":")
 	statvalue := strings.TrimSpace(statstring[1])
-  statfloat, _ := strconv.ParseFloat(statvalue, 64)
+	statfloat, _ := strconv.ParseFloat(statvalue, 64)
 	return statfloat
 }
 
@@ -121,7 +119,7 @@ func generateJailsArray() []jail {
 
 func jailsHander(w http.ResponseWriter, r *http.Request) {
 
-  jails := generateJailsArray()
+	jails := generateJailsArray()
 
 	for _, jail := range jails {
 		fail2banCurrentFailed.WithLabelValues(jail.name).Set(jail.currentfailed)
@@ -138,10 +136,10 @@ func jailHander(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	j := jailProcess(vars["jail"])
 
-  fail2banCurrentFailed.WithLabelValues(j.name).Set(j.currentfailed)
-  fail2banCurrentBanned.WithLabelValues(j.name).Set(j.currentbanned)
-  fail2banTotalFailed.WithLabelValues(j.name).Set(j.totalfailed)
-  fail2banTotalBanned.WithLabelValues(j.name).Set(j.totalbanned)
+	fail2banCurrentFailed.WithLabelValues(j.name).Set(j.currentfailed)
+	fail2banCurrentBanned.WithLabelValues(j.name).Set(j.currentbanned)
+	fail2banTotalFailed.WithLabelValues(j.name).Set(j.totalfailed)
+	fail2banTotalBanned.WithLabelValues(j.name).Set(j.totalbanned)
 
 	promhttp.HandlerFor(reg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 
