@@ -82,10 +82,11 @@ func processJailStat(fail2banstats string, regex string) float64 {
 	return statfloat
 }
 
-func jailProcess(jailname string) jail {
+func jailProcess(jailname string) (*jail, error) {
 	out, err := exec.Command("fail2ban-client", "status", jailname).Output()
 	if err != nil {
-		fmt.Println(err)
+		log.Error("Error finding jail:", jailname)
+		return nil, err
 	}
 	fail2banstats := string(out)
 	j := jail{name: jailname}
@@ -93,7 +94,7 @@ func jailProcess(jailname string) jail {
 	j.totalfailed = processJailStat(fail2banstats, `.*Total failed:.*`)
 	j.currentbanned = processJailStat(fail2banstats, `.*Currently banned:.*`)
 	j.totalbanned = processJailStat(fail2banstats, `.*Total banned:.*`)
-	return j
+	return &j, nil
 }
 
 func jailList() string {
@@ -107,50 +108,63 @@ func jailList() string {
 	return jailslist[1]
 }
 
-func generateJailsArray() []jail {
+func generateJailsArray() ([]jail, error) {
 	var jails []jail
 	for _, i := range strings.Split(jailList(), ",") {
 		jailname := strings.Replace(i, " ", "", -1)
-		j := jailProcess(string(jailname))
-		jails = append(jails, j)
+		j, err := jailProcess(string(jailname))
+		if err != nil {
+			log.Error("Cannot generate jails array")
+			return nil, err
+		}
+		jails = append(jails, *j)
 	}
-	return jails
+	return jails, nil
 }
 
 func jailsHander(w http.ResponseWriter, r *http.Request) {
 
-	jails := generateJailsArray()
+	jails, err := generateJailsArray()
 
-	for _, jail := range jails {
-		fail2banCurrentFailed.WithLabelValues(jail.name).Set(jail.currentfailed)
-		fail2banCurrentBanned.WithLabelValues(jail.name).Set(jail.currentbanned)
-		fail2banTotalFailed.WithLabelValues(jail.name).Set(jail.totalfailed)
-		fail2banTotalBanned.WithLabelValues(jail.name).Set(jail.totalbanned)
+	if err != nil {
+		log.Error("Cannot generate jails array")
+	} else {
+		for _, jail := range jails {
+			fail2banCurrentFailed.WithLabelValues(jail.name).Set(jail.currentfailed)
+			fail2banCurrentBanned.WithLabelValues(jail.name).Set(jail.currentbanned)
+			fail2banTotalFailed.WithLabelValues(jail.name).Set(jail.totalfailed)
+			fail2banTotalBanned.WithLabelValues(jail.name).Set(jail.totalbanned)
+		}
+		promhttp.HandlerFor(reg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 	}
-
-	promhttp.HandlerFor(reg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 func jailHander(w http.ResponseWriter, r *http.Request) {
-
 	vars := mux.Vars(r)
-	j := jailProcess(vars["jail"])
+	j, err := jailProcess(vars["jail"])
+	if err != nil {
+		log.Error("Cannot generate jails array")
+		return
+	}
+
+	smallreg := prometheus.NewRegistry()
+	smallreg.MustRegister(fail2banCurrentFailed)
+	smallreg.MustRegister(fail2banCurrentBanned)
+	smallreg.MustRegister(fail2banTotalFailed)
+	smallreg.MustRegister(fail2banTotalBanned)
 
 	fail2banCurrentFailed.WithLabelValues(j.name).Set(j.currentfailed)
 	fail2banCurrentBanned.WithLabelValues(j.name).Set(j.currentbanned)
 	fail2banTotalFailed.WithLabelValues(j.name).Set(j.totalfailed)
 	fail2banTotalBanned.WithLabelValues(j.name).Set(j.totalbanned)
 
-	promhttp.HandlerFor(reg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
-
+	promhttp.HandlerFor(smallreg, promhttp.HandlerOpts{}).ServeHTTP(w, r)
 }
 
 func main() {
-	//jails := generateJailsArray()
 
 	r := mux.NewRouter()
 	r.HandleFunc("/metrics", jailsHander)
 	r.HandleFunc("/probe/{jail}", jailHander)
-
 	log.Fatal(http.ListenAndServe(":8089", r))
 }
